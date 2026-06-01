@@ -110,7 +110,7 @@ This software and associated visual output may not be used, copied, modified,
 distributed, sublicensed, sold, or incorporated into commercial products or
 services without prior written permission from the rights holder.
 
-For commercial licensing, contact: [CONTACT EMAIL]
+For commercial licensing, contact: kns98@yahoo.com
 ```
 
 Replace the bracketed fields before publication.
