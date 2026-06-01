@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ray-Traced Room 10s Film Path</title>
+
+  <style>
+    html, body {
+      margin: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #050505;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    canvas {
+      display: block;
+      width: 100vw;
+      height: 100vh;
+      cursor: grab;
+    }
+
+    canvas:active {
+      cursor: grabbing;
+    }
+
+    #panel {
+      position: fixed;
+      left: 14px;
+      top: 14px;
+      z-index: 2;
+      color: rgba(255, 255, 255, 0.95);
+      background: rgba(0, 0, 0, 0.52);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 12px;
+      padding: 12px 14px;
+      font-size: 13px;
+      line-height: 1.45;
+      user-select: none;
+      min-width: 260px;
+      backdrop-filter: blur(4px);
+    }
+
+    #panel b {
+      display: inline-block;
+      margin-bottom: 6px;
+    }
+
+    #panel .row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 8px;
+      flex-wrap: wrap;
+    }
+
+    #panel button,
+    #panel select {
+      background: rgba(255, 255, 255, 0.12);
+      color: white;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-radius: 8px;
+      padding: 6px 9px;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    #panel button:hover,
+    #panel select:hover {
+      background: rgba(255, 255, 255, 0.18);
+    }
+
+    #status {
+      color: rgba(255, 255, 255, 0.78);
+      margin-top: 8px;
+      font-size: 12px;
+    }
+  </style>
+</head>
+
+<body>
+<canvas id="canvas"></canvas>
+<div id="panel">
+  <b>10-second room film</b><br>
+  A faster, more obvious fly-through path is enabled by default and loops every 10 seconds.<br>
+  <div class="row">
+    <button id="playPauseBtn">Pause film</button>
+    <button id="restartBtn">Restart</button>
+    <button id="manualBtn">Manual mode</button>
+    <button id="filmBtn">Film mode</button>
+  </div>
+  <div class="row">
+    <label for="scaleSelect">Render scale:</label>
+    <select id="scaleSelect">
+      <option value="0.25">25%</option>
+      <option value="0.33">33%</option>
+      <option value="0.5" selected>50%</option>
+      <option value="0.67">67%</option>
+      <option value="1">100%</option>
+    </select>
+  </div>
+  <div style="margin-top:8px;">
+    Keyboard: F play/pause film, T restart, M manual, W/A/S/D move, Q/E down/up, drag mouse to look, R reset, - / = lower or raise render scale.
+  </div>
+  <div id="status"></div>
+</div>
+
+<script>
+class Vec3 {
+  constructor(x = 0, y = 0, z = 0) {
+    this.x = x;
+    this.y = y;
+    this.z = z;
+  }
+
+  add(v) { return new Vec3(this.x + v.x, this.y + v.y, this.z + v.z); }
+  sub(v) { return new Vec3(this.x - v.x, this.y - v.y, this.z - v.z); }
+  mul(s) { return new Vec3(this.x * s, this.y * s, this.z * s); }
+  div(s) { return new Vec3(this.x / s, this.y / s, this.z / s); }
+  dot(v) { return this.x * v.x + this.y * v.y + this.z * v.z; }
+  cross(v) {
+    return new Vec3(
+      this.y * v.z - this.z * v.y,
+      this.z * v.x - this.x * v.z,
+      this.x * v.y - this.y * v.x
+    );
+  }
+  length() { return Math.sqrt(this.dot(this)); }
+  normalize() {
+    const len = this.length();
+    if (len < 1e-8) return new Vec3(0, 0, 0);
+    return this.div(len);
+  }
+}
+
+class Ray {
+  constructor(origin, direction) {
+    this.origin = origin;
+    this.direction = direction.normalize();
+  }
+}
+
+class Material {
+  constructor(color, emission = 0) {
+    this.color = color;
+    this.emission = emission;
+  }
+}
+
+class Triangle {
+  constructor(a, b, c, material) {
+    this.a = a;
+    this.b = b;
+    this.c = c;
+    this.material = material;
+    this.normal = b.sub(a).cross(c.sub(a)).normalize();
+  }
+
+  intersect(ray) {
+    const EPS = 1e-6;
+    const edge1 = this.b.sub(this.a);
+    const edge2 = this.c.sub(this.a);
+    const h = ray.direction.cross(edge2);
+    const det = edge1.dot(h);
+    if (Math.abs(det) < EPS) return null;
+
+    const invDet = 1 / det;
+    const s = ray.origin.sub(this.a);
+    const u = invDet * s.dot(h);
+    if (u < 0 || u > 1) return null;
+
+    const q = s.cross(edge1);
+    const v = invDet * ray.direction.dot(q);
+    if (v < 0 || u + v > 1) return null;
+
+    const t = invDet * edge2.dot(q);
+    if (t < EPS) return null;
+
+    return {
+      t,
+      point: ray.origin.add(ray.direction.mul(t)),
+      normal: this.normal,
+      material: this.material
+    };
+  }
+}
+
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d", { alpha: false });
+ctx.imageSmoothingEnabled = true;
+
+const playPauseBtn = document.getElementById("playPauseBtn");
+const restartBtn = document.getElementById("restartBtn");
+const manualBtn = document.getElementById("manualBtn");
+const filmBtn = document.getElementById("filmBtn");
+const scaleSelect = document.getElementById("scaleSelect");
+const statusEl = document.getElementById("status");
+
+let width = 1;
+let height = 1;
+let imageData;
+let pixels;
+let renderScale = 0.5;
+const allowedScales = [0.25, 0.33, 0.5, 0.67, 1.0];
+
+const tris = [];
+
+const whiteWall = new Material(new Vec3(0.78, 0.76, 0.72));
+const redWall = new Material(new Vec3(0.75, 0.18, 0.14));
+const blueWall = new Material(new Vec3(0.16, 0.28, 0.75));
+const floorMat = new Material(new Vec3(0.55, 0.50, 0.43));
+const ceilingMat = new Material(new Vec3(0.72, 0.72, 0.70));
+const lightMat = new Material(new Vec3(1.0, 0.92, 0.72), 6.0);
+
+const woodMat = new Material(new Vec3(0.46, 0.28, 0.13));
+const darkWoodMat = new Material(new Vec3(0.23, 0.13, 0.07));
+const sofaMat = new Material(new Vec3(0.16, 0.38, 0.58));
+const cushionMat = new Material(new Vec3(0.90, 0.72, 0.42));
+const rugMat = new Material(new Vec3(0.55, 0.18, 0.22));
+const plantMat = new Material(new Vec3(0.12, 0.50, 0.18));
+const potMat = new Material(new Vec3(0.50, 0.28, 0.16));
+const lampMat = new Material(new Vec3(1.0, 0.82, 0.48), 1.5);
+
+function quad(a, b, c, d, mat) {
+  tris.push(new Triangle(a, b, c, mat));
+  tris.push(new Triangle(a, c, d, mat));
+}
+
+function box(min, max, mat) {
+  const x0 = min.x, y0 = min.y, z0 = min.z;
+  const x1 = max.x, y1 = max.y, z1 = max.z;
+
+  const p000 = new Vec3(x0, y0, z0);
+  const p001 = new Vec3(x0, y0, z1);
+  const p010 = new Vec3(x0, y1, z0);
+  const p011 = new Vec3(x0, y1, z1);
+  const p100 = new Vec3(x1, y0, z0);
+  const p101 = new Vec3(x1, y0, z1);
+  const p110 = new Vec3(x1, y1, z0);
+  const p111 = new Vec3(x1, y1, z1);
+
+  quad(p001, p101, p111, p011, mat);
+  quad(p100, p000, p010, p110, mat);
+  quad(p000, p001, p011, p010, mat);
+  quad(p101, p100, p110, p111, mat);
+  quad(p010, p011, p111, p110, mat);
+  quad(p000, p100, p101, p001, mat);
+}
+
+function buildRoom() {
+  const x0 = -2.5, x1 = 2.5;
+  const y0 = -1.5, y1 = 2.0;
+  const z0 = 1.0, z1 = 6.0;
+
+  quad(new Vec3(x0, y0, z0), new Vec3(x1, y0, z0), new Vec3(x1, y0, z1), new Vec3(x0, y0, z1), floorMat);
+  quad(new Vec3(x0, y1, z1), new Vec3(x1, y1, z1), new Vec3(x1, y1, z0), new Vec3(x0, y1, z0), ceilingMat);
+  quad(new Vec3(x0, y0, z1), new Vec3(x1, y0, z1), new Vec3(x1, y1, z1), new Vec3(x0, y1, z1), whiteWall);
+  quad(new Vec3(x0, y0, z0), new Vec3(x0, y0, z1), new Vec3(x0, y1, z1), new Vec3(x0, y1, z0), redWall);
+  quad(new Vec3(x1, y0, z1), new Vec3(x1, y0, z0), new Vec3(x1, y1, z0), new Vec3(x1, y1, z1), blueWall);
+  quad(new Vec3(-0.65, 1.95, 3.0), new Vec3(0.65, 1.95, 3.0), new Vec3(0.65, 1.95, 4.0), new Vec3(-0.65, 1.95, 4.0), lightMat);
+}
+
+function buildFurniture() {
+  box(new Vec3(-1.65, -1.48, 3.45), new Vec3(1.65, -1.42, 4.85), rugMat);
+  box(new Vec3(-1.75, -1.15, 4.55), new Vec3(1.75, -0.70, 5.20), sofaMat);
+  box(new Vec3(-1.75, -0.70, 4.95), new Vec3(1.75, 0.20, 5.20), sofaMat);
+  box(new Vec3(-1.95, -1.15, 4.55), new Vec3(-1.70, -0.45, 5.20), sofaMat);
+  box(new Vec3(1.70, -1.15, 4.55), new Vec3(1.95, -0.45, 5.20), sofaMat);
+  box(new Vec3(-1.30, -0.65, 4.35), new Vec3(-0.35, -0.18, 4.55), cushionMat);
+  box(new Vec3(0.35, -0.65, 4.35), new Vec3(1.30, -0.18, 4.55), cushionMat);
+  box(new Vec3(-0.75, -1.18, 2.75), new Vec3(0.75, -0.95, 3.55), woodMat);
+  box(new Vec3(-0.65, -1.50, 2.85), new Vec3(-0.50, -1.18, 3.00), darkWoodMat);
+  box(new Vec3(0.50, -1.50, 2.85), new Vec3(0.65, -1.18, 3.00), darkWoodMat);
+  box(new Vec3(-0.65, -1.50, 3.30), new Vec3(-0.50, -1.18, 3.45), darkWoodMat);
+  box(new Vec3(0.50, -1.50, 3.30), new Vec3(0.65, -1.18, 3.45), darkWoodMat);
+  box(new Vec3(-2.10, -1.50, 2.05), new Vec3(-1.40, -0.95, 2.45), woodMat);
+  box(new Vec3(-2.05, -0.95, 2.10), new Vec3(-1.45, -0.25, 2.40), woodMat);
+  box(new Vec3(1.35, -1.50, 2.00), new Vec3(1.70, -0.25, 2.35), potMat);
+  box(new Vec3(1.28, -0.25, 1.95), new Vec3(1.77, 0.10, 2.40), plantMat);
+  box(new Vec3(1.43, 0.05, 2.05), new Vec3(1.62, 0.65, 2.30), plantMat);
+  box(new Vec3(-2.20, -1.50, 3.95), new Vec3(-2.05, 0.65, 4.10), darkWoodMat);
+  box(new Vec3(-2.35, 0.65, 3.75), new Vec3(-1.90, 1.05, 4.30), lampMat);
+  box(new Vec3(-0.85, 0.35, 5.95), new Vec3(0.85, 1.15, 5.98), darkWoodMat);
+  box(new Vec3(-0.75, 0.45, 5.92), new Vec3(0.75, 1.05, 5.95), new Material(new Vec3(0.08, 0.09, 0.11)));
+}
+
+buildRoom();
+buildFurniture();
+
+const startCameraPos = new Vec3(0.0, 0.45, -2.30);
+const startYaw = 0;
+const startPitch = -0.055;
+
+let cameraPos = new Vec3(startCameraPos.x, startCameraPos.y, startCameraPos.z);
+let cameraYaw = startYaw;
+let cameraPitch = startPitch;
+let needsRender = true;
+let filmMode = true;
+let filmPlaying = true;
+let filmTime = 0;
+
+const filmDuration = 10.0;
+const filmPath = [
+  { time: 0.00, pos: new Vec3(0.00, 0.55, -2.25), target: new Vec3(0.00, -0.10, 3.35) },
+  { time: 0.12, pos: new Vec3(-1.60, 0.50, 1.20), target: new Vec3(-0.25, -0.95, 3.10) },
+  { time: 0.24, pos: new Vec3(-1.95, 0.95, 2.55), target: new Vec3(0.15, -0.85, 3.25) },
+  { time: 0.38, pos: new Vec3(-0.55, 0.20, 2.35), target: new Vec3(0.10, -1.05, 3.05) },
+  { time: 0.50, pos: new Vec3(0.00, 0.15, 1.85), target: new Vec3(0.00, -1.10, 3.20) },
+  { time: 0.64, pos: new Vec3(1.75, 0.60, 2.00), target: new Vec3(0.15, -0.90, 4.15) },
+  { time: 0.78, pos: new Vec3(1.55, 1.25, 4.35), target: new Vec3(-0.15, -0.40, 3.05) },
+  { time: 0.90, pos: new Vec3(0.20, 1.20, 5.20), target: new Vec3(0.00, -0.55, 3.30) },
+  { time: 1.00, pos: new Vec3(0.00, 0.55, -2.25), target: new Vec3(0.00, -0.10, 3.35) }
+];
+
+const keys = new Set();
+let dragging = false;
+let lastMouseX = 0;
+let lastMouseY = 0;
+
+function clamp(value, min, max) { return Math.max(min, Math.min(max, value)); }
+function mix(a, b, t) { return a + (b - a) * t; }
+function mixVec3(a, b, t) { return new Vec3(mix(a.x, b.x, t), mix(a.y, b.y, t), mix(a.z, b.z, t)); }
+function smoothstep(t) { return t * t * (3 - 2 * t); }
+
+function lookAt(target) {
+  const dir = target.sub(cameraPos).normalize();
+  cameraYaw = Math.atan2(dir.x, dir.z);
+  cameraPitch = Math.asin(clamp(dir.y, -1, 1));
+}
+
+function sampleFilmPath(normalizedTime) {
+  const t = ((normalizedTime % 1) + 1) % 1;
+  for (let i = 0; i < filmPath.length - 1; i++) {
+    const a = filmPath[i];
+    const b = filmPath[i + 1];
+    if (t >= a.time && t <= b.time) {
+      const local = smoothstep((t - a.time) / (b.time - a.time));
+      return {
+        pos: mixVec3(a.pos, b.pos, local),
+        target: mixVec3(a.target, b.target, local)
+      };
+    }
+  }
+  return filmPath[0];
+}
+
+function setFilmCamera() {
+  const sample = sampleFilmPath(filmTime / filmDuration);
+  cameraPos = sample.pos;
+  lookAt(sample.target);
+  needsRender = true;
+}
+
+function playFilmPath(restart = false) {
+  if (restart) filmTime = 0;
+  filmMode = true;
+  filmPlaying = true;
+  setFilmCamera();
+  updateStatus();
+}
+
+function pauseFilmPath() {
+  filmPlaying = false;
+  updateStatus();
+}
+
+function stopFilmPath() {
+  filmMode = false;
+  filmPlaying = false;
+  keys.clear();
+  updateStatus();
+}
+
+function getCameraBasis() {
+  const cameraDir = new Vec3(
+    Math.sin(cameraYaw) * Math.cos(cameraPitch),
+    Math.sin(cameraPitch),
+    Math.cos(cameraYaw) * Math.cos(cameraPitch)
+  ).normalize();
+
+  const worldUp = new Vec3(0, 1, 0);
+  const right = worldUp.cross(cameraDir).normalize();
+  const cameraUp = cameraDir.cross(right).normalize();
+  return { cameraDir, right, cameraUp };
+}
+
+function resetCamera() {
+  stopFilmPath();
+  filmTime = 0;
+  cameraPos = new Vec3(startCameraPos.x, startCameraPos.y, startCameraPos.z);
+  cameraYaw = startYaw;
+  cameraPitch = startPitch;
+  needsRender = true;
+  updateStatus();
+}
+
+function intersectScene(ray) {
+  let closest = null;
+  for (const tri of tris) {
+    const hit = tri.intersect(ray);
+    if (hit && (!closest || hit.t < closest.t)) closest = hit;
+  }
+  return closest;
+}
+
+function trace(ray) {
+  const hit = intersectScene(ray);
+  if (!hit) return new Vec3(0.02, 0.025, 0.035);
+  if (hit.material.emission > 0) return hit.material.color.mul(hit.material.emission);
+
+  const lightPos = new Vec3(0, 1.88, 3.5);
+  const toLight = lightPos.sub(hit.point);
+  const lightDistance = toLight.length();
+  const lightDir = toLight.normalize();
+
+  const shadowRay = new Ray(hit.point.add(hit.normal.mul(0.002)), lightDir);
+  const shadowHit = intersectScene(shadowRay);
+  let shadow = 1.0;
+  if (shadowHit && shadowHit.t < lightDistance && shadowHit.material.emission <= 0) shadow = 0.25;
+
+  const diffuse = Math.max(0, hit.normal.dot(lightDir));
+  const ambient = 0.16;
+  const brightness = ambient + diffuse * shadow * 1.5;
+  return hit.material.color.mul(brightness);
+}
+
+function render() {
+  const aspect = width / height;
+  const fov = Math.tan((70 * Math.PI / 180) / 2);
+  const { cameraDir, right, cameraUp } = getCameraBasis();
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const u = (2 * (x + 0.5) / width - 1) * aspect * fov;
+      const v = (1 - 2 * (y + 0.5) / height) * fov;
+
+      const direction = cameraDir.add(right.mul(u)).add(cameraUp.mul(v)).normalize();
+      const ray = new Ray(cameraPos, direction);
+      let color = trace(ray);
+
+      color = new Vec3(
+        Math.pow(Math.min(1, color.x), 1 / 2.2),
+        Math.pow(Math.min(1, color.y), 1 / 2.2),
+        Math.pow(Math.min(1, color.z), 1 / 2.2)
+      );
+
+      const index = (y * width + x) * 4;
+      pixels[index] = color.x * 255;
+      pixels[index + 1] = color.y * 255;
+      pixels[index + 2] = color.z * 255;
+      pixels[index + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+}
+
+function applyRenderScale(scale) {
+  renderScale = scale;
+  scaleSelect.value = String(scale);
+  resize();
+  updateStatus();
+}
+
+function stepRenderScale(direction) {
+  let idx = allowedScales.findIndex(v => Math.abs(v - renderScale) < 0.001);
+  if (idx === -1) idx = 2;
+  idx = clamp(idx + direction, 0, allowedScales.length - 1);
+  applyRenderScale(allowedScales[idx]);
+}
+
+function resize() {
+  const displayWidth = window.innerWidth;
+  const displayHeight = window.innerHeight;
+  width = Math.max(1, Math.round(displayWidth * renderScale));
+  height = Math.max(1, Math.round(displayHeight * renderScale));
+
+  canvas.width = width;
+  canvas.height = height;
+  canvas.style.width = displayWidth + "px";
+  canvas.style.height = displayHeight + "px";
+
+  imageData = ctx.createImageData(width, height);
+  pixels = imageData.data;
+  needsRender = true;
+}
+
+function updateFilm(deltaSeconds) {
+  if (!filmMode || !filmPlaying) return;
+  filmTime += deltaSeconds;
+  if (filmTime >= filmDuration) filmTime -= filmDuration;
+  setFilmCamera();
+}
+
+function updateCamera(deltaSeconds) {
+  if (filmMode || keys.size === 0) return;
+
+  const { cameraDir, right } = getCameraBasis();
+  const speed = 2.6;
+  let move = new Vec3(0, 0, 0);
+
+  if (keys.has("w")) move = move.add(cameraDir);
+  if (keys.has("s")) move = move.sub(cameraDir);
+  if (keys.has("d")) move = move.add(right);
+  if (keys.has("a")) move = move.sub(right);
+  if (keys.has("e")) move = move.add(new Vec3(0, 1, 0));
+  if (keys.has("q")) move = move.sub(new Vec3(0, 1, 0));
+
+  if (move.length() > 0) {
+    cameraPos = cameraPos.add(move.normalize().mul(speed * deltaSeconds));
+    needsRender = true;
+  }
+}
+
+function updateStatus() {
+  const mode = filmMode ? (filmPlaying ? "Film mode: playing" : "Film mode: paused") : "Manual mode";
+  const timeText = filmMode ? ` | time ${(filmTime % filmDuration).toFixed(1)} / ${filmDuration.toFixed(0)}s` : "";
+  const scaleText = ` | render ${Math.round(renderScale * 100)}% (${width}×${height})`;
+  statusEl.textContent = mode + timeText + scaleText;
+  playPauseBtn.textContent = filmPlaying && filmMode ? "Pause film" : "Play film";
+}
+
+window.addEventListener("resize", resize);
+
+window.addEventListener("keydown", (event) => {
+  const key = event.key.toLowerCase();
+
+  if (["w", "a", "s", "d", "q", "e", "r", "f", "t", "m", "-", "=", "+"].includes(key)) {
+    event.preventDefault();
+  }
+
+  if (key === "f") {
+    if (!filmMode) {
+      playFilmPath(false);
+    } else if (filmPlaying) {
+      pauseFilmPath();
+    } else {
+      playFilmPath(false);
+    }
+    return;
+  }
+
+  if (key === "t") {
+    playFilmPath(true);
+    return;
+  }
+
+  if (key === "m") {
+    stopFilmPath();
+    needsRender = true;
+    return;
+  }
+
+  if (key === "r") {
+    resetCamera();
+    return;
+  }
+
+  if (key === "-") {
+    stepRenderScale(-1);
+    return;
+  }
+
+  if (key === "=" || key === "+") {
+    stepRenderScale(1);
+    return;
+  }
+
+  if (["w", "a", "s", "d", "q", "e"].includes(key)) {
+    stopFilmPath();
+    keys.add(key);
+  }
+});
+
+window.addEventListener("keyup", (event) => {
+  keys.delete(event.key.toLowerCase());
+});
+
+canvas.addEventListener("mousedown", (event) => {
+  stopFilmPath();
+  dragging = true;
+  lastMouseX = event.clientX;
+  lastMouseY = event.clientY;
+});
+
+window.addEventListener("mouseup", () => {
+  dragging = false;
+});
+
+window.addEventListener("mousemove", (event) => {
+  if (!dragging) return;
+
+  const sensitivity = 0.004;
+  const dx = event.clientX - lastMouseX;
+  const dy = event.clientY - lastMouseY;
+  lastMouseX = event.clientX;
+  lastMouseY = event.clientY;
+
+  cameraYaw -= dx * sensitivity;
+  cameraPitch = clamp(cameraPitch + dy * sensitivity, -1.35, 1.35);
+  needsRender = true;
+});
+
+playPauseBtn.addEventListener("click", () => {
+  if (!filmMode) {
+    playFilmPath(false);
+  } else if (filmPlaying) {
+    pauseFilmPath();
+  } else {
+    playFilmPath(false);
+  }
+});
+
+restartBtn.addEventListener("click", () => playFilmPath(true));
+manualBtn.addEventListener("click", () => {
+  stopFilmPath();
+  needsRender = true;
+});
+filmBtn.addEventListener("click", () => playFilmPath(false));
+scaleSelect.addEventListener("change", () => applyRenderScale(parseFloat(scaleSelect.value)));
+
+let previousTime = performance.now();
+
+function animationLoop(now) {
+  const deltaSeconds = Math.min(0.05, (now - previousTime) / 1000);
+  previousTime = now;
+
+  updateFilm(deltaSeconds);
+  updateCamera(deltaSeconds);
+
+  if (needsRender) {
+    render();
+    needsRender = false;
+    updateStatus();
+  }
+
+  requestAnimationFrame(animationLoop);
+}
+
+resize();
+setFilmCamera();
+updateStatus();
+requestAnimationFrame(animationLoop);
+</script>
+</body>
+</html>
