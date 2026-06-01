@@ -1,120 +1,215 @@
-# Ray-Traced Room Lighting Showcase
+# Lighting Showcase — JavaScript Raytracer
 
-A standalone HTML5 canvas demo that renders a simple ray-traced furnished room and demonstrates animated lighting behavior. The scene includes a cinematic camera path, progressive light dimming and brightening, manual camera controls, and adjustable render resolution for performance.
+Lighting Showcase is a single-file JavaScript raytracing demo that renders an interactive 3D room scene directly in the browser using a 2D canvas. It includes dynamic lighting, a built-in furnished room, a demo camera path, manual navigation controls, recursive BVH acceleration, and Wavefront OBJ model loading.
 
 ## Features
 
-* Standalone HTML file; no external dependencies required.
-* CPU-based ray tracing in JavaScript.
-* Furnished room scene with walls, floor, ceiling, sofa, table, rug, plant, lamp, and screen.
-* Cinematic demo camera path.
-* Manual camera movement.
-* Lighting showcase sequence:
+* CPU-based ray tracing rendered into an HTML5 canvas
+* Built-in room scene with walls, floor, ceiling, sofa, rug, table, cabinet, plant, lamp, and screen
+* Direct lighting from a ceiling panel and lamp
+* Emissive materials for visible light sources
+* Animated lighting sequence with brightness transitions
+* Recursive BVH bounding boxes for triangle acceleration
+* Demo camera path for automatic scene walkthrough
+* Manual camera movement using keyboard and mouse
+* Render scale options for balancing quality and performance
+* Wavefront `.obj` import
+* Optional `.mtl` material support when loaded together with the OBJ file
+* Drag-and-drop file loading in the browser
 
-  * Lights fully off
-  * Ceiling light progressively brightening
-  * Ceiling light fully on
-  * Ceiling light dimming while floor lamp brightens
-  * Mixed lighting
-  * Progressive fade back to dark
-* Adjustable render scale for performance tuning.
-* On-screen status panel showing lighting phase and light intensity values.
+## Getting Started
 
-## Files
+### 1. Create an HTML file
 
-```text
-furniture_lighting_showcase.html
+Create a blank HTML file, for example:
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Lighting Showcase</title>
+</head>
+<body>
+  <script src="lighting-showcase-onefile.js"></script>
+</body>
+</html>
 ```
 
-Open the HTML file directly in a modern browser to run the demo.
+### 2. Add the JavaScript file
 
-## How to Run
+Place the JavaScript file in the same folder as the HTML file.
 
-1. Download or copy `furniture_lighting_showcase.html`.
-2. Open it in Chrome, Edge, Firefox, or another modern desktop browser.
-3. The lighting demo starts automatically.
+Example folder structure:
 
-No build step, server, or package installation is required.
+```text
+project-folder/
+├── index.html
+└── lighting-showcase-onefile.js
+```
+
+### 3. Open in a browser
+
+Open `index.html` in a modern browser.
+
+The application will automatically start and render the built-in room scene.
 
 ## Controls
 
-| Control               | Action                                 |
-| --------------------- | -------------------------------------- |
-| `F`                   | Play / pause the lighting demo         |
-| `T`                   | Restart the demo                       |
-| `M`                   | Switch to manual camera mode           |
-| `P`                   | Return to demo camera mode             |
-| `W` / `A` / `S` / `D` | Move forward / left / backward / right |
-| `Q` / `E`             | Move down / up                         |
-| Mouse drag            | Look around manually                   |
-| `R`                   | Reset the manual camera                |
-| `-` / `=`             | Lower / raise render scale             |
+| Control    | Action                                |
+| ---------- | ------------------------------------- |
+| `W`        | Move forward                          |
+| `A`        | Move left                             |
+| `S`        | Move backward                         |
+| `D`        | Move right                            |
+| `Q`        | Move down                             |
+| `E`        | Move up                               |
+| Mouse drag | Look around                           |
+| `F`        | Play or pause lighting/demo animation |
+| `T`        | Restart demo                          |
+| `M`        | Switch to manual camera               |
+| `P`        | Switch to demo camera                 |
+| `R`        | Reset camera                          |
+| `+` / `=`  | Increase render scale                 |
+| `-` / `_`  | Decrease render scale                 |
 
-The on-screen buttons provide the same main controls.
+## User Interface
+
+The on-screen control panel includes:
+
+* Play/Pause button
+* Restart button
+* Manual camera button
+* Demo camera button
+* Reset camera button
+* Render scale selector
+* OBJ/MTL file loader
+* Current scene status
+* Triangle count
+* Lighting state
+* Camera mode
+
+## Loading OBJ Models
+
+The application supports loading Wavefront `.obj` files.
+
+To load a model:
+
+1. Click the file input in the control panel, or drag files into the browser window.
+2. Select an `.obj` file.
+3. Optionally select related `.mtl` files at the same time.
+4. The model will be imported into the existing room scene.
+
+When loaded, the OBJ model is automatically scaled and positioned inside the built-in room.
+
+## Supported File Types
+
+| File Type | Purpose                       |
+| --------- | ----------------------------- |
+| `.obj`    | 3D model geometry             |
+| `.mtl`    | Optional material definitions |
+
+## Rendering System
+
+The renderer casts rays from the camera into the scene and shades the first visible triangle hit by each ray. Lighting is computed using direct illumination from scene lights, material color, emissive surfaces, distance attenuation, and shadow checks.
+
+The scene geometry is stored as triangles. A recursive BVH structure is used to accelerate ray-triangle intersection tests, making larger scenes more practical than a simple brute-force triangle loop.
+
+## Scene Structure
+
+The built-in scene contains:
+
+* Enclosed room
+* Floor and ceiling
+* Colored side walls
+* Back wall
+* Ceiling light panel
+* Sofa
+* Cushions
+* Rug
+* Coffee table
+* Cabinet
+* Plant and pot
+* Floor lamp
+* Wall-mounted screen
 
 ## Performance Notes
 
-This demo uses CPU-based ray tracing in JavaScript, so performance depends heavily on screen resolution and device speed.
+This project uses CPU ray tracing, so performance depends heavily on:
 
-For smoother playback, lower the render scale using the on-screen dropdown or the `-` key. The default render scale is 50%, which provides a balance between visual quality and performance.
+* Browser speed
+* Screen resolution
+* Render scale
+* Number of triangles in the scene
+* Complexity of imported OBJ models
 
-Suggested settings:
+For better performance, use a lower render scale such as 25% or 50%.
 
-| Device Type              | Suggested Render Scale |
-| ------------------------ | ---------------------- |
-| Older laptop             | 25%–33%                |
-| Modern laptop            | 33%–50%                |
-| Desktop computer         | 50%–67%                |
-| High-performance desktop | 67%–100%               |
+For better image quality, use 75% or 100%, but expect slower rendering.
 
-## Customizing the Demo
+## Browser Requirements
 
-You can edit the HTML file directly.
+A modern browser with support for:
 
-Common places to modify:
+* JavaScript ES6 classes
+* HTML5 canvas
+* File API
+* Drag-and-drop events
+* `requestAnimationFrame`
 
-* `sceneLights`: change light position, color, and intensity.
-* `evaluateLighting()`: change the timing of the on/off and dimming sequence.
-* `demoPath`: change the cinematic camera path.
-* `renderScale`: change the default render scale.
-* Materials near the top of the script: change colors and emission values.
+Recommended browsers:
 
-## Commercial Use and Licensing
+* Chrome
+* Edge
+* Firefox
+* Safari
 
-This project is not automatically licensed for unrestricted commercial use.
+## Project Type
 
-If this demo, its source code, visual design, scene structure, or derived versions are used in a commercial product, paid client project, advertisement, training package, SaaS product, website, app, installation, exhibition, or other revenue-generating context, a commercial license should be obtained from the rights holder before use.
+This is a self-contained browser-based raytracing demo. It does not require:
 
-Commercial use may include, but is not limited to:
+* npm
+* bundlers
+* external libraries
+* WebGL
+* server-side code
 
-* Using the demo in a paid product or client deliverable.
-* Embedding the code in a commercial website or application.
-* Using the rendered visuals in advertising, marketing, or promotional material.
-* Modifying the code and distributing the modified version commercially.
-* Including the demo in paid courses, exhibitions, demos, or presentations.
+Everything runs locally in the browser.
 
-For personal learning, internal experimentation, and non-commercial demonstration, permission terms should still be confirmed with the rights holder before redistribution.
+## Limitations
 
-## Suggested License Notice
+* Rendering is CPU-based and may be slow at high resolutions.
+* The raytracer currently uses direct lighting rather than full global illumination.
+* OBJ material support is basic.
+* Texture maps are not supported.
+* Very large OBJ files may reduce performance significantly.
+* The built-in scene remains active when an OBJ model is loaded.
 
-Add a formal license file before distributing this project.
+## Suggested Improvements
 
-Example placeholder:
+Possible future enhancements include:
+
+* Web Worker rendering
+* Progressive rendering
+* Anti-aliasing
+* Reflections and recursive ray bounces
+* Texture support
+* Area light sampling
+* Physically based materials
+* Scene export/import
+* Separate scene configuration files
+* WebGL or WebGPU acceleration
+
+## License
+
+Add your preferred license here.
+
+Example:
 
 ```text
-Copyright (c) 2026 Kevin N Sheth
-
-All rights reserved.
-
-This software and associated visual output may not be used, copied, modified,
-distributed, sublicensed, sold, or incorporated into commercial products or
-services without prior written permission from the rights holder.
-
-For commercial licensing, contact: kns98@yahoo.com
+MIT License
 ```
 
-Replace the bracketed fields before publication.
+## Credits
 
-## Disclaimer
-
-This demo is provided as an experimental visual prototype. It is not optimized for production rendering workloads and does not include a full physically based lighting model. Review, test, and license the code appropriately before public or commercial use.
+Lighting Showcase is a single-file JavaScript port of a C# WinForms raytracer project. It preserves the original raytracing behavior while adapting the application to run directly in a browser.
